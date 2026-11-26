@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Denjoy BLE Lab</title>
+<style>
+  :root{--bg:#0f1115;--card:#181b22;--line:#262a33;--text:#e8eaf0;--muted:#8a90a0;--acc:#3aa0ff;--ok:#2ecc71;--bad:#ff5c5c;--warn:#ffb020}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 12px 24px}
+  h1{font-size:20px;margin:14px 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:900px){.grid{grid-template-columns:380px 1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+  button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:600}
+  button.sec{background:#2a2f3a} button.red{background:var(--bad)}
+  button:disabled{opacity:.4}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+  input,select{background:#0c0e12;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;font-family:ui-monospace,Menlo,monospace;flex:1;min-width:0}
+  input[type=checkbox]{flex:none;width:auto}
+  .status{display:flex;align-items:center;gap:8px;font-weight:600}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--bad)}
+  .dot.on{background:var(--ok)} .dot.wait{background:var(--warn)}
+  .hint{color:var(--muted);font-size:12px;line-height:1.4}
+  /* panou live */
+  .live{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .tile{background:#0c0e12;border-radius:12px;padding:10px}
+  .tile .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .tile .v{font-size:26px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+  .tile .v small{font-size:13px;color:var(--muted);font-weight:500}
+  .bar{display:flex;gap:3px;margin-top:8px}
+  .bar i{flex:1;height:10px;border-radius:3px;background:#2a2f3a}
+  .bar i.on{background:var(--ok)} .bar i.on.hi{background:var(--warn)} .bar i.on.max{background:var(--bad)}
+  .raw{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#0c0e12;border-radius:10px;padding:8px;margin-top:8px;word-break:break-all}
+  .raw b{color:var(--acc);font-weight:600}
+  .raw .chg{background:#5a3a00;color:#ffcf6e;border-radius:3px}
+  .fields{font-size:12px;margin-top:6px;display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
+  .fields span:nth-child(odd){color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  #log{font-family:ui-monospace,Menlo,monospace;font-size:12px;height:45vh;overflow:auto;background:#0c0e12;border-radius:10px;padding:8px;white-space:pre-wrap;word-break:break-all}
+  .l-in{color:#7fd1ff} .l-out{color:#ffcf6e} .l-sys{color:var(--muted)} .l-ch{color:#ff8ad8} .l-new{color:#7dffb0}
+  .l-mark{color:#fff;background:#3a2a5a;display:block;padding:2px 4px;border-radius:4px;margin:4px 0}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .chips button{padding:6px 10px;font-size:13px;background:#3a2a5a}
+  details summary{cursor:pointer;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<h1>Denjoy BLE Lab <span class="hint">v3</span></h1>
+<div class="sub">Analizor de protocol pentru DY-Meta Motor · deschide în <b>Bluefy</b></div>
+
+<div class="grid">
+  <div>
+    <div class="card">
+      <h2>Conexiune</h2>
+      <div class="row status"><span id="dot" class="dot"></span><span id="stat">Neconectat</span></div>
+      <div class="row">
+        <button id="btnQuick">Conectează Meta Motor</button>
+        <button id="btnDisc" class="sec" disabled>Deconectează</button>
+      </div>
+      <div class="row">
+        <button id="btnScan" class="sec">Alt aparat…</button>
+        <label class="hint"><input type="checkbox" id="autoRe" checked> Reconectare automată</label>
+      </div>
+      <div class="hint" id="connHint">Închide aplicația Denjoy înainte (aparatul acceptă o singură conexiune).<br>În fereastra Bluefy lasă bifat „Permiteți conexiuni în fundal” — atunci data viitoare se conectează singur, fără căutare.</div>
+    </div>
+
+    <div class="card">
+      <h2>Meta Motor · live</h2>
+      <div class="live">
+        <div class="tile"><div class="k">Program</div><div class="v" id="vProg">–</div></div>
+        <div class="tile"><div class="k">Viteză</div><div class="v"><span id="vSpeed">–</span> <small>rpm</small></div></div>
+        <div class="tile"><div class="k">Stare</div><div class="v" id="vState" style="font-size:18px">–</div></div>
+      </div>
+      <div class="tile" style="margin-top:8px">
+        <div class="k">Sarcină / nivel (octet 7) · <span id="vLoad">–</span></div>
+        <div class="bar" id="loadBar"></div>
+      </div>
+      <div class="raw" id="rawFrame">Aștept pachet de stare (cmd 12)…</div>
+      <div class="fields" id="fields"></div>
+      <div class="hint" style="margin-top:8px">Octeții care s-au schimbat față de pachetul anterior sunt evidențiați cu galben. Ultimul eveniment: <span id="vEvt">–</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Test automat: comanda de viteză</h2>
+      <div class="row"><input id="tSpeed" value="300" inputmode="numeric" style="flex:0 0 100px"><span class="hint">rpm țintă</span>
+      <button id="btnTest">Pornește testul</button></div>
+      <div class="hint" id="tOut">Trimite pachetul de stare cu viteza schimbată pe FF02, FF03 și FF04, pe rând, și verifică dacă motorul o preia. Doar cu motorul oprit și fără ac.</div>
+    </div>
+
+    <div class="card">
+      <h2>Trimite comandă (experimental)</h2>
+      <div class="row"><select id="wrTarget"><option value="">— caracteristica —</option></select></div>
+      <div class="row">
+        <input id="wrCmd" placeholder="cmd ex: 12" style="flex:0 0 90px">
+        <input id="wrPayload" placeholder="date ex: 00 03 00 00 5E 01">
+      </div>
+      <div class="row"><span class="hint">Pachet final:</span> <code id="wrPreview" class="hint" style="font-family:ui-monospace,Menlo,monospace">–</code></div>
+      <div class="row">
+        <label class="hint"><input type="checkbox" id="wrRaw"> trimite hex brut (fără 55 AA / checksum)</label>
+        <button id="btnSend" disabled>Trimite</button>
+      </div>
+      <div class="hint">Comanda de control încă nu o știm. Testează doar pe masă, cu acul scos, niciodată pe pacient.</div>
+    </div>
+
+    <div class="card">
+      <details><summary>Servicii și caracteristici</summary><div id="chars" class="hint" style="margin-top:8px">Conectează-te ca să apară lista.</div></details>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Jurnal (pachete complete, decodate)</h2>
+      <div class="row">
+        <input id="markTxt" placeholder="Notă: ce ai făcut pe aparat (ex: P4 → P5)">
+        <button id="btnMark" class="sec">Notă</button>
+      </div>
+      <div class="hint" style="margin-bottom:6px">Butoanele mov doar scriu o notă în jurnal — apasă-l, apoi fă acțiunea pe aparat:</div>
+      <div class="chips">
+        <button data-m="START motor">Start</button><button data-m="STOP motor">Stop</button>
+        <button data-m="+ speed">+ speed</button><button data-m="− speed">− speed</button>
+        <button data-m="+ torque">+ torque</button><button data-m="− torque">− torque</button>
+        <button data-m="Program următor">P →</button><button data-m="Apex: ac în canal">Apex</button>
+        <button data-m="Rotație inversă / mod">Mod</button>
+      </div>
+      <div class="row">
+        <label class="hint"><input type="checkbox" id="onlyChanges" checked> Doar pachetele care se schimbă</label>
+        <label class="hint"><input type="checkbox" id="showFrag"> Fragmente brute</label>
+        <label class="hint"><input type="checkbox" id="pause"> Pauză</label>
+      </div>
+      <div id="log"></div>
+      <div class="row" style="margin-top:8px">
+        <button id="btnCopy" class="sec">Copiază</button>
+        <button id="btnSave" class="sec">Salvează .txt</button>
+        <button id="btnClear" class="red">Șterge</button>
+      </div>
+      <div class="hint" id="stats"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Protocol cunoscut până acum (DY-Meta Motor) =====
+   Serviciu FF00 · FF01 = notify (aparat → noi) · FF02/FF03/FF04 = write
+   Cadru: 55 AA | LEN (total octeți) | CMD | date… | CHK
+   CHK = suma tuturor octeților anteriori & 0xFF
+   CMD 0x12 (LEN 0x0F), ~1/s:
+     [4] ?  [5] program (0 = P1)  [6] stare (0 stop, 1 rulează, 2 ?)
+     [7] nivel 0–6 (sarcină/torque?)  [8..9] viteză rpm little-endian
+     [10] ?  [11] 0x32 (torque? mod?)  [12] contor 0–3  [13] ?
+   CMD 0x13 (LEN 0x07): [4] eveniment (01/02)  [5] ?
+*/
+const U = s => s.length===4 ? `0000${s.toLowerCase()}-0000-1000-8000-00805f9b34fb` : s.toLowerCase();
+const OPTIONAL = ['ff00','ffe0','fff0','fee7','180a','180f','1800','1801',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455','6e400001-b5a3-f393-e0a9-e50e24dcca9e'].map(U);
+const NAME_PREFIX = 'DY-';
+const LS_KEY = 'denjoy.lastDeviceName';
+
+let device=null, server=null, chars=[], lines=[], userDisc=false;
+let rx=[], prevStatus=null, lastLogged={}, counts={frames:0,bad:0,shown:0};
+const $=id=>document.getElementById(id);
+const logEl=$('log');
+
+const H = b => b.toString(16).padStart(2,'0').toUpperCase();
+const hexArr = a => Array.from(a).map(H).join(' ');
+const bytesOf = dv => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+const short = uuid => { const m=uuid.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/); return m?m[1].toUpperCase():uuid; };
+const ts = () => { const d=new Date(); return d.toTimeString().slice(0,8)+'.'+String(d.getMilliseconds()).padStart(3,'0'); };
+const chk = a => a.reduce((s,b)=>s+b,0)&0xFF;
+
+function log(kind, text){
+  const line = `${ts()} ${text}`; lines.push(line);
+  if($('pause').checked && kind!=='mark') return;
+  const el=document.createElement('span'); el.className='l-'+kind; el.textContent=line+'\n';
+  logEl.appendChild(el);
+  if(logEl.childNodes.length>3000) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+  $('stats').textContent=`Cadre complete: ${counts.frames} · afișate: ${counts.shown} · checksum greșit: ${counts.bad}`;
+}
+function setStatus(t,s){ $('stat').textContent=t; $('dot').className='dot'+(s?' '+s:''); }
+
+/* ---------- Conectare ---------- */
+function needBT(){ if(!navigator.bluetooth){ alert('Web Bluetooth lipsește. Deschide pagina în aplicația Bluefy.'); return false;} return true; }
+
+async function tryKnownDevice(){
+  // Bluefy: dacă ai bifat „conexiuni în fundal”, aparatul e deja permis → fără fereastra de căutare
+  if(!navigator.bluetooth?.getDevices) return false;
+  try{
+    const list = await navigator.bluetooth.getDevices();
+    const want = localStorage.getItem(LS_KEY);
+    const d = list.find(x=>x.name===want) || list.find(x=>(x.name||'').startsWith(NAME_PREFIX));
+    if(!d) return false;
+    await useDevice(d); return true;
+  }catch(e){ log('sys','getDevices: '+e.message); return false; }
+}
+
+$('btnQuick').onclick = async () => {
+  if(!needBT()) return;
+  if(device && !device.gatt.connected){ userDisc=false; try{ await connect(); return; }catch(e){ log('sys',e.message); } }
+  if(await tryKnownDevice()) return;
+  try{
+    const d = await navigator.bluetooth.requestDevice({
+      filters:[{namePrefix:NAME_PREFIX},{services:[U('ff00')]}],
+      optionalServices:OPTIONAL });
+    await useDevice(d);
+  }catch(e){ log('sys','Anulat: '+e.message); }
+};
+$('btnScan').onclick = async () => {
+  if(!needBT()) return;
+  try{ await useDevice(await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalServices:OPTIONAL})); }
+  catch(e){ log('sys','Anulat: '+e.message); }
+};
+
+async function useDevice(d){
+  if(device && device!==d){ try{ device.gatt.disconnect(); }catch(e){} }
+  device=d; userDisc=false;
+  if(d.name) localStorage.setItem(LS_KEY, d.name);
+  d.removeEventListener('gattserverdisconnected', onDisconnect);
+  d.addEventListener('gattserverdisconnected', onDisconnect);
+  await connect();
+}
+
+async function connect(){
+  setStatus('Conectare la '+(device.name||'aparat')+'…','wait');
+  server = await device.gatt.connect();
+  setStatus('Conectat: '+(device.name||device.id),'on');
+  $('btnQuick').textContent='Reconectează';
+  log('sys',`== CONECTAT ${device.name||''}`);
+  $('btnDisc').disabled=false;
+  rx=[]; prevStatus=null;
+  await discover();
+}
+
+async function discover(){
+  chars=[]; const box=$('chars'); box.innerHTML='';
+  const sel=$('wrTarget'); sel.innerHTML='<option value="">— caracteristica —</option>';
+  let services=[]; try{ services=await server.getPrimaryServices(); }catch(e){ log('sys','Servicii: '+e.message); }
+  for(const s of services){
+    const sh=document.createElement('div'); sh.style.margin='8px 0 4px'; sh.textContent='Serviciu '+short(s.uuid); box.appendChild(sh);
+    let cs=[]; try{ cs=await s.getCharacteristics(); }catch(e){}
+    for(const c of cs){
+      const p=c.properties, id=short(c.uuid);
+      const props=['read','write','writeWithoutResponse','notify','indicate'].filter(k=>p[k]);
+      chars.push(c);
+      const d=document.createElement('div'); d.textContent=`  ${id}: ${props.join(', ')}`; box.appendChild(d);
+      if(p.notify||p.indicate){
+        c.addEventListener('characteristicvaluechanged', ev=>onData(id, bytesOf(ev.target.value)));
+        try{ await c.startNotifications(); }catch(e){ log('sys',`notify ${id}: ${e.message}`); }
+      }
+      if(p.write||p.writeWithoutResponse){
+        const o=document.createElement('option'); o.value=chars.length-1; o.textContent=`${short(s.uuid)} / ${id}`; sel.appendChild(o);
+      }
+    }
+  }
+  // implicit FF02 (primul „write”)
+  for(const o of sel.options) if(o.textContent.endsWith('FF02')) o.selected=true;
+  $('btnSend').disabled = sel.options.length<2;
+  log('ch', 'Caracteristici: '+chars.map(c=>short(c.uuid)).join(', '));
+}
+
+function onDisconnect(){
+  setStatus('Deconectat',''); log('sys','== DECONECTAT');
+  $('btnDisc').disabled=true; $('btnSend').disabled=true;
+  if(!userDisc && $('autoRe').checked && device) reconnect(1);
+}
+async function reconnect(n){
+  if(userDisc) return;
+  if(n>15){ setStatus('Deconectat — apasă Reconectează',''); return; }
+  setStatus(`Reconectare (${n})…`,'wait');
+  await new Promise(r=>setTimeout(r,Math.min(400*n,3000)));
+  try{ await connect(); log('sys',`Reconectat (încercarea ${n})`); }
+  catch(e){ reconnect(n+1); }
+}
+$('btnDisc').onclick=()=>{ userDisc=true; device?.gatt.disconnect(); };
+
+/* ---------- Reasamblare cadre 55 AA ---------- */
+function onData(charId, bytes){
+  if($('showFrag').checked) log('sys',`frag ${charId} [${bytes.length}] ${hexArr(bytes)}`);
+  if(charId!=='FF01'){ log('in',`${charId} ← ${hexArr(bytes)}`); }
+  rx.push(...bytes);
+  while(rx.length>=4){
+    const i = rx.findIndex((b,k)=>b===0x55 && rx[k+1]===0xAA);
+    if(i<0){ rx = rx.slice(-1); return; }
+    if(i>0) rx = rx.slice(i);
+    if(rx.length<3) return;
+    const len = rx[2];
+    if(len<5 || len>64){ rx = rx.slice(2); continue; }
+    if(rx.length<len) return;
+    const f = rx.slice(0,len); rx = rx.slice(len);
+    if(chk(f.slice(0,-1))!==f[len-1]){ counts.bad++; log('sys','checksum greșit: '+hexArr(f)); continue; }
+    counts.frames++; handleFrame(f);
+  }
+}
+
+function handleFrame(f){
+  const cmd=f[3], h=hexArr(f);
+  const changed = lastLogged[cmd]!==h; lastLogged[cmd]=h;
+  if(cmd===0x12) renderStatus(f);
+  let desc='';
+  if(cmd===0x12) desc = `P${f[5]+1} · ${f[8]|(f[9]<<8)} rpm · stare ${f[6]} · nivel ${f[7]}`;
+  if(cmd===0x13){ desc = f[4]===2?'BUTON S apăsat pe motor':`EVENIMENT ${H(f[4])} ${H(f[5])}`; $('vEvt').textContent=`${ts()} cmd13 ${H(f[4])} ${H(f[5])}`; }
+  const isNewCmd = !['18','19'].includes(String(cmd)) && cmd!==0x12 && cmd!==0x13;
+  if(!$('onlyChanges').checked || changed || cmd!==0x12){
+    counts.shown++;
+    log(isNewCmd?'new':'in', `${H(cmd)} ← ${h}${desc?'   → '+desc:''}${isNewCmd?'   ★ comandă nouă':''}`);
+  }
+}
+
+const loadBar=$('loadBar'); for(let i=0;i<8;i++){ const x=document.createElement('i'); loadBar.appendChild(x); }
+const STATES={0:'Oprit',1:'Rulează',2:'Stare 2'};
+function renderStatus(f){
+  const speed=f[8]|(f[9]<<8);
+  $('vProg').textContent='P'+(f[5]+1);
+  $('vSpeed').textContent=speed;
+  $('vState').textContent=STATES[f[6]]??('Stare '+f[6]);
+  $('vState').style.color = f[6]===1?'var(--ok)':'';
+  $('vLoad').textContent=f[7];
+  [...loadBar.children].forEach((x,i)=>{ x.className = i<f[7] ? 'on'+(i>=6?' max':i>=4?' hi':'') : ''; });
+  $('rawFrame').innerHTML = f.map((b,i)=>{
+    const ch = prevStatus && prevStatus[i]!==b && i!==f.length-1;
+    return `<span class="${ch?'chg':''}" title="octet ${i}">${i>=4&&i<f.length-1?'<b>':''}${H(b)}${i>=4&&i<f.length-1?'</b>':''}</span>`;
+  }).join(' ');
+  const names={4:'? (4)',5:'program',6:'stare',7:'nivel',8:'viteză lo',9:'viteză hi',10:'? (10)',11:'? (11) — torque?',12:'secunde în repaus',13:'? (13)'};
+  $('fields').innerHTML = Object.entries(names).map(([i,n])=>`<span>[${i}] ${H(f[i])} = ${f[i]}</span><span>${n}</span>`).join('');
+  prevStatus=f;
+}
+
+/* ---------- Trimitere ---------- */
+const parseHex = s => { const c=s.replace(/0x/gi,'').replace(/[^0-9a-f]/gi,''); if(c.length%2) return null; return (c.match(/../g)||[]).map(x=>parseInt(x,16)); };
+function buildPacket(){
+  if($('wrRaw').checked) return parseHex($('wrPayload').value);
+  const cmd=parseHex($('wrCmd').value), pl=parseHex($('wrPayload').value);
+  if(!cmd||cmd.length!==1||!pl) return null;
+  const f=[0x55,0xAA,pl.length+5,cmd[0],...pl]; f.push(chk(f)); return f;
+}
+function preview(){ const p=buildPacket(); $('wrPreview').textContent = p&&p.length ? hexArr(p) : '–'; }
+['wrCmd','wrPayload','wrRaw'].forEach(id=>$(id).addEventListener('input',preview));
+$('btnSend').onclick=async()=>{
+  const c=chars[$('wrTarget').value], p=buildPacket(); if(!c||!p||!p.length){ alert('Pachet invalid'); return; }
+  const bytes=new Uint8Array(p);
+  try{
+    if(c.properties.writeWithoutResponse) await c.writeValueWithoutResponse(bytes); else await c.writeValueWithResponse(bytes);
+    log('out',`→ ${short(c.uuid)} ${hexArr(bytes)}`);
+  }catch(e){ log('sys','Scriere: '+e.message); }
+};
+
+
+/* ---------- Test automat viteză ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+$('btnTest').onclick=async()=>{
+  const out=$('tOut'); const target=parseInt($('tSpeed').value,10);
+  if(!prevStatus){ out.textContent='Aștept întâi un pachet de stare de la motor.'; return; }
+  if(prevStatus[6]!==0){ out.textContent='Oprește motorul întâi (stare trebuie să fie 0).'; return; }
+  if(!(target>=100&&target<=1200)){ out.textContent='Alege o viteză între 100 și 1200.'; return; }
+  const writers=chars.filter(c=>c.properties.write||c.properties.writeWithoutResponse);
+  $('btnTest').disabled=true;
+  for(const c of writers){
+    const base=prevStatus.slice(); const f=base.slice(0,-1);
+    f[8]=target&0xFF; f[9]=target>>8; f[12]=0; f.push(chk(f));
+    out.textContent=`Încerc pe ${short(c.uuid)}: ${hexArr(f)}`;
+    log('out',`TEST → ${short(c.uuid)} ${hexArr(f)}`);
+    try{ const b=new Uint8Array(f);
+      if(c.properties.writeWithoutResponse) await c.writeValueWithoutResponse(b); else await c.writeValueWithResponse(b);
+    }catch(e){ log('sys',`${short(c.uuid)}: ${e.message}`); continue; }
+    await sleep(2500);
+    const sp=prevStatus[8]|(prevStatus[9]<<8);
+    if(sp===target){ out.innerHTML=`<b style="color:var(--ok)">✅ MERGE pe ${short(c.uuid)}!</b> Motorul a trecut pe ${sp} rpm.`; log('new',`★ COMANDA DE VITEZĂ GĂSITĂ: ${short(c.uuid)} ${hexArr(f)}`); $('btnTest').disabled=false; return; }
+  }
+  out.innerHTML='❌ Motorul nu a preluat viteza pe niciuna. Formatul comenzii e altul — avem nevoie de captura din aplicația Denjoy.';
+  log('sys','Test viteză: nicio caracteristică nu a schimbat viteza.');
+  $('btnTest').disabled=false;
+};
+
+/* ---------- Note / export ---------- */
+function mark(t){ if(t) log('mark',`>>> ${t}`); }
+$('btnMark').onclick=()=>{ mark($('markTxt').value.trim()); $('markTxt').value=''; };
+$('markTxt').onkeydown=e=>{ if(e.key==='Enter') $('btnMark').click(); };
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>mark(b.dataset.m));
+const fullText=()=>`Denjoy BLE Lab v2 · ${new Date().toISOString()} · ${device?.name||''}\n`+lines.join('\n');
+$('btnCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(fullText()); alert('Copiat'); }catch(e){ prompt('Copiază manual:',fullText().slice(-5000)); } };
+$('btnSave').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([fullText()],{type:'text/plain'})); a.download=`denjoy-log-${Date.now()}.txt`; a.click(); };
+$('btnClear').onclick=()=>{ if(confirm('Ștergi jurnalul?')){ lines=[]; lastLogged={}; counts={frames:0,bad:0,shown:0}; logEl.innerHTML=''; } };
+
+/* ---------- Pornire: încearcă conectarea automată ---------- */
+log('sys', navigator.bluetooth ? 'Web Bluetooth disponibil.' : 'Web Bluetooth NU e disponibil — deschide în Bluefy.');
+if(navigator.bluetooth) tryKnownDevice().then(ok=>{ if(!ok) log('sys','Apasă „Conectează Meta Motor”.'); });
+</script>
+</body>
+</html>
