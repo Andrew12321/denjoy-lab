@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Denjoy BLE Lab</title>
+<style>
+  :root{--bg:#0f1115;--card:#181b22;--line:#262a33;--text:#e8eaf0;--muted:#8a90a0;--acc:#3aa0ff;--ok:#2ecc71;--bad:#ff5c5c;--warn:#ffb020}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 12px 24px}
+  h1{font-size:20px;margin:14px 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:900px){.grid{grid-template-columns:360px 1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+  button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:600}
+  button.sec{background:#2a2f3a}
+  button.red{background:var(--bad)}
+  button:disabled{opacity:.4}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+  input,select{background:#0c0e12;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;font-family:ui-monospace,Menlo,monospace;flex:1;min-width:0}
+  .status{display:flex;align-items:center;gap:8px;font-weight:600}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--bad)}
+  .dot.on{background:var(--ok)} .dot.wait{background:var(--warn)}
+  .char{border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:6px;font-size:13px}
+  .char code{font-family:ui-monospace,Menlo,monospace;color:var(--acc)}
+  .props{color:var(--muted);font-size:12px}
+  .char .row{margin:6px 0 0}
+  .char button{padding:6px 10px;font-size:13px}
+  #log{font-family:ui-monospace,Menlo,monospace;font-size:12px;height:55vh;overflow:auto;background:#0c0e12;border-radius:10px;padding:8px;white-space:pre-wrap;word-break:break-all}
+  .l-in{color:#7fd1ff} .l-out{color:#ffcf6e} .l-sys{color:var(--muted)} .l-mark{color:#fff;background:#3a2a5a;display:block;padding:2px 4px;border-radius:4px;margin:4px 0}
+  .l-ch{color:#ff8ad8}
+  .hint{color:var(--muted);font-size:12px;line-height:1.4}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chips button{padding:6px 10px;font-size:13px;background:#2a2f3a}
+</style>
+</head>
+<body>
+<h1>Denjoy BLE Lab</h1>
+<div class="sub">Analizor de protocol pentru Meta Motor / Meta Fill / Meta Pex · deschide în <b>Bluefy</b></div>
+
+<div class="grid">
+  <div>
+    <div class="card">
+      <h2>Conexiune</h2>
+      <div class="row status"><span id="dot" class="dot"></span><span id="stat">Neconectat</span></div>
+      <div class="row">
+        <button id="btnScan">Caută aparat</button>
+        <button id="btnDisc" class="sec" disabled>Deconectează</button>
+      </div>
+      <div class="row">
+        <label class="hint"><input type="checkbox" id="autoRe" checked style="flex:none;width:auto"> Reconectare automată</label>
+      </div>
+      <div class="hint">Închide întâi aplicația Denjoy (un aparat acceptă o singură conexiune).</div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Servicii și caracteristici</h2>
+      <div id="chars" class="hint">Conectează-te ca să apară lista.</div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Trimite (hex)</h2>
+      <div class="row"><select id="wrTarget"><option value="">— alege caracteristica —</option></select></div>
+      <div class="row"><input id="wrHex" placeholder="ex: AA 55 01 00 FF" autocapitalize="characters" autocomplete="off"></div>
+      <div class="row">
+        <label class="hint"><input type="checkbox" id="wrResp" style="flex:none;width:auto"> cu răspuns</label>
+        <button id="btnSend" disabled>Trimite</button>
+      </div>
+      <div class="hint">⚠️ Testează comenzile doar pe masă, nu în timpul tratamentului.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Jurnal</h2>
+    <div class="row">
+      <input id="markTxt" placeholder="Notă: ce ai făcut pe aparat (ex: speed 300 → 350)">
+      <button id="btnMark" class="sec">Marchează</button>
+    </div>
+    <div class="chips" style="margin-bottom:8px">
+      <button data-m="START">Start</button><button data-m="STOP">Stop</button>
+      <button data-m="+ speed">+ speed</button><button data-m="− speed">− speed</button>
+      <button data-m="+ torque">+ torque</button><button data-m="− torque">− torque</button>
+      <button data-m="Schimb program P">Schimb P</button><button data-m="Apex: ac în canal">Apex</button>
+      <button data-m="Temp +">Temp +</button><button data-m="Temp −">Temp −</button>
+    </div>
+    <div class="row">
+      <label class="hint"><input type="checkbox" id="dedupe" checked style="flex:none;width:auto"> Ascunde pachetele repetate identic</label>
+      <label class="hint"><input type="checkbox" id="pause" style="flex:none;width:auto"> Pauză</label>
+    </div>
+    <div id="log"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnCopy" class="sec">Copiază jurnalul</button>
+      <button id="btnSave" class="sec">Salvează .txt</button>
+      <button id="btnClear" class="red">Șterge</button>
+    </div>
+    <div class="hint" id="stats"></div>
+  </div>
+</div>
+
+<script>
+// Servicii pe care Web Bluetooth trebuie să le ceară explicit
+const U = s => s.length===4 ? `0000${s.toLowerCase()}-0000-1000-8000-00805f9b34fb` : s.toLowerCase();
+const OPTIONAL = ['ff00','ff10','ff20','ffe0','fff0','fee0','fee7','180a','180f','1800','1801',
+  'ae30','ae00','49535343-fe7d-4ae5-8fa9-9fafd205e455','6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+  '0000fff0-0000-1000-8000-00805f9b34fb','8e4a61b0-9861-11e7-abc4-cec278b6b50a'].map(U);
+const NAMES = {'2a29':'Producător','2a24':'Model','2a26':'Firmware','2a27':'Hardware','2a25':'Serie','2a19':'Baterie %','2a00':'Nume aparat'};
+
+let device=null, server=null, chars=[], lines=[], last={}, counts={in:0,out:0,dup:0}, userDisc=false;
+const $=id=>document.getElementById(id);
+const logEl=$('log');
+
+const hex = dv => Array.from(new Uint8Array(dv.buffer||dv, dv.byteOffset||0, dv.byteLength)).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+const ascii = dv => Array.from(new Uint8Array(dv.buffer||dv, dv.byteOffset||0, dv.byteLength)).map(b=>b>=32&&b<127?String.fromCharCode(b):'.').join('');
+const short = uuid => { const m=uuid.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/); return m?m[1].toUpperCase():uuid; };
+const ts = () => { const d=new Date(); return d.toTimeString().slice(0,8)+'.'+String(d.getMilliseconds()).padStart(3,'0'); };
+
+function log(kind, text){
+  const line = `${ts()} ${text}`;
+  lines.push(line);
+  if($('pause').checked && kind!=='mark') return;
+  const el=document.createElement('span');
+  el.className='l-'+kind; el.textContent=line+'\n';
+  logEl.appendChild(el);
+  if(logEl.childNodes.length>3000) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+  $('stats').textContent=`Primite: ${counts.in} · Trimise: ${counts.out} · Repetate ascunse: ${counts.dup}`;
+}
+function setStatus(t, s){ $('stat').textContent=t; $('dot').className='dot'+(s?' '+s:''); }
+
+$('btnScan').onclick = async () => {
+  if(!navigator.bluetooth){ alert('Web Bluetooth lipsește. Deschide pagina în aplicația Bluefy.'); return; }
+  try{
+    device = await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalServices:OPTIONAL});
+    device.addEventListener('gattserverdisconnected', onDisconnect);
+    userDisc=false;
+    await connect();
+  }catch(e){ log('sys','Anulat / eroare: '+e.message); }
+};
+
+async function connect(){
+  setStatus('Conectare la '+(device.name||'aparat')+'…','wait');
+  server = await device.gatt.connect();
+  setStatus('Conectat: '+(device.name||device.id),'on');
+  log('sys',`== CONECTAT ${device.name||''} (${device.id})`);
+  $('btnDisc').disabled=false;
+  await discover();
+}
+
+async function discover(){
+  chars=[]; const box=$('chars'); box.innerHTML='';
+  const sel=$('wrTarget'); sel.innerHTML='<option value="">— alege caracteristica —</option>';
+  let services=[];
+  try{ services = await server.getPrimaryServices(); }catch(e){ log('sys','getPrimaryServices: '+e.message); }
+  for(const s of services){
+    const sh=document.createElement('div'); sh.className='hint'; sh.style.margin='8px 0 4px';
+    sh.innerHTML=`Serviciu <code style="color:var(--text)">${short(s.uuid)}</code>`; box.appendChild(sh);
+    log('ch',`SERVICIU ${short(s.uuid)}`);
+    let cs=[]; try{ cs=await s.getCharacteristics(); }catch(e){ log('sys','  '+e.message); }
+    for(const c of cs){
+      const p=c.properties, props=['read','write','writeWithoutResponse','notify','indicate'].filter(k=>p[k]);
+      const id=short(c.uuid); chars.push(c);
+      log('ch',`  CARACT ${id} [${props.join(', ')}]`);
+      const d=document.createElement('div'); d.className='char';
+      d.innerHTML=`<code>${id}</code> ${NAMES[id.toLowerCase()]||''}<div class="props">${props.join(' · ')}</div><div class="row"></div>`;
+      const r=d.querySelector('.row');
+      if(p.read){ const b=document.createElement('button'); b.className='sec'; b.textContent='Citește';
+        b.onclick=async()=>{ try{ const v=await c.readValue(); log('in',`R ${id} ← ${hex(v)}  |${ascii(v)}|`);}catch(e){log('sys',e.message);} }; r.appendChild(b); }
+      if(p.notify||p.indicate){
+        const b=document.createElement('button'); b.textContent='Ascultă'; let on=false;
+        const handler=ev=>{ const v=ev.target.value, h=hex(v); counts.in++;
+          if($('dedupe').checked && last[id]===h){ counts.dup++; return; } last[id]=h;
+          log('in',`N ${id} ← [${v.byteLength}] ${h}  |${ascii(v)}|`); };
+        b.onclick=async()=>{ try{
+          if(!on){ c.addEventListener('characteristicvaluechanged',handler); await c.startNotifications(); on=true; b.textContent='Oprește'; b.className='sec'; log('sys',`Ascult ${id}`);}
+          else { await c.stopNotifications(); c.removeEventListener('characteristicvaluechanged',handler); on=false; b.textContent='Ascultă'; b.className=''; }
+        }catch(e){ log('sys',e.message);} };
+        r.appendChild(b);
+        // pornește automat ascultarea
+        b.click();
+      }
+      if(p.write||p.writeWithoutResponse){ const o=document.createElement('option'); o.value=chars.length-1; o.textContent=`${short(s.uuid)} / ${id}`; sel.appendChild(o); }
+      box.appendChild(d);
+      // citește automat info standard
+      if(p.read && NAMES[id.toLowerCase()]){ try{ const v=await c.readValue(); log('in',`  ${NAMES[id.toLowerCase()]}: ${ascii(v)} (${hex(v)})`);}catch(e){} }
+    }
+  }
+  if(sel.options.length===2) sel.selectedIndex=1;
+  $('btnSend').disabled = sel.options.length<2;
+  if(!services.length) box.textContent='Niciun serviciu accesibil. Trimite-mi UUID-urile din nRF Connect ca să le adaug.';
+}
+
+function onDisconnect(){
+  setStatus('Deconectat','');
+  log('sys','== DECONECTAT');
+  $('btnDisc').disabled=true; $('btnSend').disabled=true;
+  if(!userDisc && $('autoRe').checked && device) reconnect(1);
+}
+async function reconnect(n){
+  if(n>10){ log('sys','Reconectare eșuată după 10 încercări.'); return; }
+  const wait=Math.min(500*n,4000);
+  setStatus(`Reconectare (${n})…`,'wait');
+  await new Promise(r=>setTimeout(r,wait));
+  try{ await connect(); log('sys',`Reconectat după ${n} încercări`); }
+  catch(e){ log('sys',`Încercarea ${n}: ${e.message}`); reconnect(n+1); }
+}
+$('btnDisc').onclick=()=>{ userDisc=true; device?.gatt.disconnect(); };
+
+$('btnSend').onclick=async()=>{
+  const c=chars[$('wrTarget').value]; if(!c) return;
+  const clean=$('wrHex').value.replace(/0x/gi,'').replace(/[^0-9a-f]/gi,'');
+  if(!clean||clean.length%2){ alert('Hex invalid'); return; }
+  const bytes=new Uint8Array(clean.match(/../g).map(h=>parseInt(h,16)));
+  try{
+    if($('wrResp').checked || !c.properties.writeWithoutResponse) await c.writeValueWithResponse(bytes);
+    else await c.writeValueWithoutResponse(bytes);
+    counts.out++; log('out',`W ${short(c.uuid)} → ${hex(bytes)}`);
+  }catch(e){ log('sys','Scriere: '+e.message); }
+};
+
+function mark(t){ if(!t) return; log('mark',`>>> ${t}`); }
+$('btnMark').onclick=()=>{ mark($('markTxt').value.trim()); $('markTxt').value=''; };
+$('markTxt').onkeydown=e=>{ if(e.key==='Enter') $('btnMark').click(); };
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>mark(b.dataset.m));
+
+const fullText=()=>`Denjoy BLE Lab · ${new Date().toISOString()} · ${device?.name||''}\n`+lines.join('\n');
+$('btnCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(fullText()); alert('Copiat'); }catch(e){ prompt('Copiază manual:',fullText().slice(0,5000)); } };
+$('btnSave').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([fullText()],{type:'text/plain'})); a.download=`denjoy-log-${Date.now()}.txt`; a.click(); };
+$('btnClear').onclick=()=>{ if(confirm('Ștergi jurnalul?')){ lines=[]; last={}; counts={in:0,out:0,dup:0}; logEl.innerHTML=''; } };
+
+log('sys', navigator.bluetooth ? 'Web Bluetooth disponibil. Apasă „Caută aparat”.' : 'Web Bluetooth NU e disponibil — deschide în Bluefy.');
+</script>
+</body>
+</html>
