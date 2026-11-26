@@ -47,7 +47,7 @@
 </style>
 </head>
 <body>
-<h1>Denjoy BLE Lab <span class="hint">v2</span></h1>
+<h1>Denjoy BLE Lab <span class="hint">v3</span></h1>
 <div class="sub">Analizor de protocol pentru DY-Meta Motor · deschide în <b>Bluefy</b></div>
 
 <div class="grid">
@@ -80,6 +80,13 @@
       <div class="raw" id="rawFrame">Aștept pachet de stare (cmd 12)…</div>
       <div class="fields" id="fields"></div>
       <div class="hint" style="margin-top:8px">Octeții care s-au schimbat față de pachetul anterior sunt evidențiați cu galben. Ultimul eveniment: <span id="vEvt">–</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Test automat: comanda de viteză</h2>
+      <div class="row"><input id="tSpeed" value="300" inputmode="numeric" style="flex:0 0 100px"><span class="hint">rpm țintă</span>
+      <button id="btnTest">Pornește testul</button></div>
+      <div class="hint" id="tOut">Trimite pachetul de stare cu viteza schimbată pe FF02, FF03 și FF04, pe rând, și verifică dacă motorul o preia. Doar cu motorul oprit și fără ac.</div>
     </div>
 
     <div class="card">
@@ -292,7 +299,7 @@ function handleFrame(f){
   if(cmd===0x12) renderStatus(f);
   let desc='';
   if(cmd===0x12) desc = `P${f[5]+1} · ${f[8]|(f[9]<<8)} rpm · stare ${f[6]} · nivel ${f[7]}`;
-  if(cmd===0x13){ desc = `EVENIMENT ${H(f[4])} ${H(f[5])}`; $('vEvt').textContent=`${ts()} cmd13 ${H(f[4])} ${H(f[5])}`; }
+  if(cmd===0x13){ desc = f[4]===2?'BUTON S apăsat pe motor':`EVENIMENT ${H(f[4])} ${H(f[5])}`; $('vEvt').textContent=`${ts()} cmd13 ${H(f[4])} ${H(f[5])}`; }
   const isNewCmd = !['18','19'].includes(String(cmd)) && cmd!==0x12 && cmd!==0x13;
   if(!$('onlyChanges').checked || changed || cmd!==0x12){
     counts.shown++;
@@ -300,7 +307,7 @@ function handleFrame(f){
   }
 }
 
-const loadBar=$('loadBar'); for(let i=0;i<7;i++){ const x=document.createElement('i'); loadBar.appendChild(x); }
+const loadBar=$('loadBar'); for(let i=0;i<8;i++){ const x=document.createElement('i'); loadBar.appendChild(x); }
 const STATES={0:'Oprit',1:'Rulează',2:'Stare 2'};
 function renderStatus(f){
   const speed=f[8]|(f[9]<<8);
@@ -309,12 +316,12 @@ function renderStatus(f){
   $('vState').textContent=STATES[f[6]]??('Stare '+f[6]);
   $('vState').style.color = f[6]===1?'var(--ok)':'';
   $('vLoad').textContent=f[7];
-  [...loadBar.children].forEach((x,i)=>{ x.className = i<f[7] ? 'on'+(i>=5?' max':i>=3?' hi':'') : ''; });
+  [...loadBar.children].forEach((x,i)=>{ x.className = i<f[7] ? 'on'+(i>=6?' max':i>=4?' hi':'') : ''; });
   $('rawFrame').innerHTML = f.map((b,i)=>{
     const ch = prevStatus && prevStatus[i]!==b && i!==f.length-1;
     return `<span class="${ch?'chg':''}" title="octet ${i}">${i>=4&&i<f.length-1?'<b>':''}${H(b)}${i>=4&&i<f.length-1?'</b>':''}</span>`;
   }).join(' ');
-  const names={4:'? (4)',5:'program',6:'stare',7:'nivel',8:'viteză lo',9:'viteză hi',10:'? (10)',11:'? (11) — torque?',12:'contor',13:'? (13)'};
+  const names={4:'? (4)',5:'program',6:'stare',7:'nivel',8:'viteză lo',9:'viteză hi',10:'? (10)',11:'? (11) — torque?',12:'secunde în repaus',13:'? (13)'};
   $('fields').innerHTML = Object.entries(names).map(([i,n])=>`<span>[${i}] ${H(f[i])} = ${f[i]}</span><span>${n}</span>`).join('');
   prevStatus=f;
 }
@@ -336,6 +343,33 @@ $('btnSend').onclick=async()=>{
     if(c.properties.writeWithoutResponse) await c.writeValueWithoutResponse(bytes); else await c.writeValueWithResponse(bytes);
     log('out',`→ ${short(c.uuid)} ${hexArr(bytes)}`);
   }catch(e){ log('sys','Scriere: '+e.message); }
+};
+
+
+/* ---------- Test automat viteză ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+$('btnTest').onclick=async()=>{
+  const out=$('tOut'); const target=parseInt($('tSpeed').value,10);
+  if(!prevStatus){ out.textContent='Aștept întâi un pachet de stare de la motor.'; return; }
+  if(prevStatus[6]!==0){ out.textContent='Oprește motorul întâi (stare trebuie să fie 0).'; return; }
+  if(!(target>=100&&target<=1200)){ out.textContent='Alege o viteză între 100 și 1200.'; return; }
+  const writers=chars.filter(c=>c.properties.write||c.properties.writeWithoutResponse);
+  $('btnTest').disabled=true;
+  for(const c of writers){
+    const base=prevStatus.slice(); const f=base.slice(0,-1);
+    f[8]=target&0xFF; f[9]=target>>8; f[12]=0; f.push(chk(f));
+    out.textContent=`Încerc pe ${short(c.uuid)}: ${hexArr(f)}`;
+    log('out',`TEST → ${short(c.uuid)} ${hexArr(f)}`);
+    try{ const b=new Uint8Array(f);
+      if(c.properties.writeWithoutResponse) await c.writeValueWithoutResponse(b); else await c.writeValueWithResponse(b);
+    }catch(e){ log('sys',`${short(c.uuid)}: ${e.message}`); continue; }
+    await sleep(2500);
+    const sp=prevStatus[8]|(prevStatus[9]<<8);
+    if(sp===target){ out.innerHTML=`<b style="color:var(--ok)">✅ MERGE pe ${short(c.uuid)}!</b> Motorul a trecut pe ${sp} rpm.`; log('new',`★ COMANDA DE VITEZĂ GĂSITĂ: ${short(c.uuid)} ${hexArr(f)}`); $('btnTest').disabled=false; return; }
+  }
+  out.innerHTML='❌ Motorul nu a preluat viteza pe niciuna. Formatul comenzii e altul — avem nevoie de captura din aplicația Denjoy.';
+  log('sys','Test viteză: nicio caracteristică nu a schimbat viteza.');
+  $('btnTest').disabled=false;
 };
 
 /* ---------- Note / export ---------- */
